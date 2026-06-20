@@ -1,0 +1,127 @@
+        
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug CM7 (openocd)",
+            "cwd": "${workspaceFolder}",
+            "type": "cortex-debug",
+            "armToolchainPath": "/usr/bin",
+            "gdbPath": "gdb-multiarch",
+            "executable": "${workspaceFolder}/Makefile/CM7/build/ethernet_canfd_gateway_CM7.elf",
+            "loadFiles": [
+                "${workspaceFolder}/Makefile/CM7/build/ethernet_canfd_gateway_CM7.elf",
+                "${workspaceFolder}/Makefile/CM4/build/ethernet_canfd_gateway_CM4.elf",
+            ],
+            "request": "launch",
+            "servertype": "openocd",
+            "device": "STM32H747XI",
+            "interface": "swd",
+            "runToEntryPoint": "main",
+            "svdFile": "${workspaceFolder}/STM32H747_CM7.svd",
+            "v1": false,
+            "showDevDebugOutput": "both",
+            "configFiles": [
+                "interface/stlink-dap.cfg",
+                "target/stm32h7x.cfg"
+            ],
+            "preLaunchTask": "Build all",
+        },
+        {
+            "name": "Debug CM7 (ST-Link",
+            "cwd": "${workspaceFolder}",
+            "type": "cortex-debug",
+            "armToolchainPath": "/usr/bin",
+            "gdbPath": "gdb-multiarch",
+            "executable": "${workspaceFolder}/Makefile/CM7/build/ethernet_canfd_gateway_CM7.elf",
+            "loadFiles": [
+                "${workspaceFolder}/Makefile/CM7/build/ethernet_canfd_gateway_CM7.elf",
+                "${workspaceFolder}/Makefile/CM4/build/ethernet_canfd_gateway_CM4.elf",
+            ],
+            "request": "launch",        
+            "servertype": "stlink",
+            "device": "STM32H747XI",
+            "interface": "swd",
+            "runToEntryPoint": "main",
+            "svdFile": "${workspaceFolder}/STM32H747_CM7.svd",
+            "v1": false,
+            "showDevDebugOutput": "both",
+            "serverArgs": [
+                "-l", "1",
+                "-m", "0",
+                "-g",
+                "-t","-s",
+            ],
+            "preLaunchCommands": [
+                "monitor halt",
+                "monitor reset" 
+            ],
+            "preLaunchTask": "Build all",
+        },
+        {
+            "name": "Debug CM7+CM4 (ST-Link)",
+            "cwd": "${workspaceFolder}",
+            "type": "cortex-debug",
+            "armToolchainPath": "/usr/bin",
+            "gdbPath": "gdb-multiarch",
+            "executable": "${workspaceFolder}/Makefile/CM7/build/ethernet_canfd_gateway_CM7.elf",
+            "loadFiles": [
+                "${workspaceFolder}/Makefile/CM7/build/ethernet_canfd_gateway_CM7.elf",
+                "${workspaceFolder}/Makefile/CM4/build/ethernet_canfd_gateway_CM4.elf",
+            ],
+            "request": "launch",        
+            "servertype": "stlink",
+            "device": "STM32H747XI",
+            "interface": "swd",
+            //"runToEntryPoint": "main",
+            "svdFile": "${workspaceFolder}/STM32H747_CM7.svd",
+            "v1": false,
+            "showDevDebugOutput": "both",
+            "serverArgs": [
+                "-l", "1",
+                "-m", "0",
+                "-g",
+                "-t","-s",
+            ],
+            "preLaunchCommands": [
+                "monitor halt",
+                "monitor reset" 
+            ],
+
+            "chainedConfigurations": {
+                "enabled": true,
+                "waitOnEvent": "postInit",
+                "detached": true,
+                "delayMs":5000,    // Wait 5s, could be optimized
+                "lifecycleManagedByParent": true,   
+                "launches": [ 
+                    {
+                        "name": "Attach CM4 (ST-Link)",
+                        "folder": "${workspaceFolder}"
+                    }
+                ]
+            },
+            "preLaunchTask": "Build all",
+        },
+        {
+            "name": "Attach CM4 (ST-Link)",
+            "cwd": "${workspaceFolder}",    
+            "type": "cortex-debug",
+            "armToolchainPath": "/usr/bin",
+            "gdbPath": "gdb-multiarch",
+            "executable": "${workspaceFolder}/Makefile/CM4/build/ethernet_canfd_gateway_CM4.elf",
+            "request": "attach", 
+            "servertype": "stlink",
+            "device": "STM32H747XI",
+            "interface": "swd",
+            "svdFile": "${workspaceFolder}/STM32H747_CM7.svd",
+            "v1": false,
+            "showDevDebugOutput": "both",
+            "serverArgs": [
+                "-l", "1",
+                "-m", "3",
+                "-t", "-s",
+            ],
+        }
+    ]
+}

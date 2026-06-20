@@ -1,0 +1,8 @@
+{
+    "makefile.makefilePath": "Makefile/Makefile", 
+    "makefile.makeDirectory": "Makefile", 
+    "C_Cpp.default.configurationProvider": "ms-vscode.makefile-tools",
+    "cortex-debug.variableUseNaturalFormat": true,
+    "cortex-debug.stlinkPath": "/home/ruben/.local/share/stm32cube/bundles/stlink-gdbserver/7.13.0+st.3/bin/ST-LINK_gdbserver",
+    "cmake.sourceDirectory": "/home/ruben/work_spaces/ethernet_canfd_gateway/Drivers/CMSIS/DSP/Source/FilteringFunctions"
+}

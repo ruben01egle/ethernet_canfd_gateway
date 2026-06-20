@@ -1,0 +1,72 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build all",
+            "type": "shell",
+            "command": "make",
+            "args": ["all"],
+            "options": {
+                "cwd": "${workspaceFolder}/Makefile"
+            },
+            "group": "build"
+        },
+        {
+            "label": "Run",
+            "type": "shell",
+            "command": "make",
+            "args": ["flash"],
+            "options": {
+                "cwd": "${workspaceFolder}/Makefile"
+            },
+        },
+        {
+            "label": "Clean all",
+            "type": "shell",
+            "command": "make",
+            "args": ["clean"],
+            "options": {
+                "cwd": "${workspaceFolder}/Makefile"
+            },
+            "group": "build"
+        },
+        {
+            "label": "Build CM7",
+            "type": "shell",
+            "command": "make",
+            "args": [],
+            "options": {
+                "cwd": "${workspaceFolder}/Makefile/CM7"
+            },
+            "group": "build"
+        },
+        {
+            "label": "Build CM4",
+            "type": "shell",
+            "command": "make",
+            "args": [],
+            "options": {
+                "cwd": "${workspaceFolder}/Makefile/CM4"
+            },
+            "group": "build"
+        },
+        {
+            "label": "build robotarm_interface ROS",
+            "type": "shell",
+            "command": "cd robotarm_interface && python3 build_cpp.py",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            }
+        },
+    ]
+}

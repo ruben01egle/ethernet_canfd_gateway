@@ -1,0 +1,119 @@
+#include "CanInterface.hpp"
+#include <cstring>
+
+CCanInterface::CCanInterface(FDCAN_HandleTypeDef* pHandler) : mHfdcan(pHandler) {
+    mCLock.reset();
+}
+
+uint32_t CCanInterface::executeTransaction(const MoteusCanFrame* pTxFrames, uint32_t pTxCount, 
+                                             uint32_t pExpectedReplies, uint32_t pTimeoutUs,
+                                             MoteusCanFrame* pOutRxFrames, uint32_t pMaxRxCapacity) 
+{
+    uint32_t start_us = mCLock.getUS();
+
+    for (uint32_t i = 0; i < pTxCount; i++) {
+        const MoteusCanFrame& src = pTxFrames[i];
+        FDCAN_TxHeaderTypeDef txHeader = {};
+
+        txHeader.Identifier = src.id;
+        txHeader.IdType     = (src.flags & FLAG_IS_EXTID) ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID;
+        txHeader.TxFrameType         = FDCAN_DATA_FRAME;
+        txHeader.DataLength          = lenToDlc(src.len);
+        txHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+        txHeader.FDFormat            = (src.flags & FLAG_IS_CANFD) ? FDCAN_FD_CAN : FDCAN_CLASSIC_CAN;
+        txHeader.BitRateSwitch       = (src.flags & FLAG_USE_BRS) ? FDCAN_BRS_ON : FDCAN_BRS_OFF;
+        txHeader.TxEventFifoControl  = FDCAN_NO_TX_EVENTS;
+        txHeader.MessageMarker       = 0;
+
+        while (HAL_FDCAN_GetTxFifoFreeLevel(mHfdcan) == 0) {
+            // burst guard for hw queue
+        }
+        HAL_FDCAN_AddMessageToTxFifoQ(mHfdcan, &txHeader, const_cast<uint8_t*>(src.data));
+    }
+
+    uint32_t receivedCount = 0;
+
+    while (((mCLock.getUS() - start_us) < pTimeoutUs) && 
+           (receivedCount < pExpectedReplies) && 
+           (receivedCount < pMaxRxCapacity)) 
+    {
+        if (HAL_FDCAN_GetRxFifoFillLevel(mHfdcan, FDCAN_RX_FIFO0) > 0) {
+            FDCAN_RxHeaderTypeDef rxHeader = {};
+            uint8_t rxData[64] = {};
+            
+            if (HAL_FDCAN_GetRxMessage(mHfdcan, FDCAN_RX_FIFO0, &rxHeader, rxData) == HAL_OK) {
+                MoteusCanFrame& dest = pOutRxFrames[receivedCount];
+                std::memset(&dest, 0, sizeof(MoteusCanFrame));
+
+                dest.id = rxHeader.Identifier;
+                dest.len = dlcToLen(rxHeader.DataLength);
+                
+                dest.flags = FLAG_NONE;
+                if (rxHeader.IdType == FDCAN_EXTENDED_ID) dest.flags |= FLAG_IS_EXTID;
+                if (rxHeader.FDFormat == FDCAN_FD_CAN)    dest.flags |= FLAG_IS_CANFD;
+                if (rxHeader.BitRateSwitch == FDCAN_BRS_ON) dest.flags |= FLAG_USE_BRS;
+
+                std::memcpy(dest.data, rxData, dest.len);
+                receivedCount++;
+            }
+        }
+    }
+
+    uint32_t end_us = mCLock.getUS();
+    mLastBusTimeUs = end_us - start_us;
+    if (mAvgBusTimeUs == 0.0f) {
+        mAvgBusTimeUs = static_cast<float>(mLastBusTimeUs);
+    } else {
+        mAvgBusTimeUs = (FILTER_ALPHA * static_cast<float>(mLastBusTimeUs)) + 
+                        ((1.0f - FILTER_ALPHA) * mAvgBusTimeUs);
+    }
+
+    return receivedCount;
+}
+
+float CCanInterface::getAvgBusTime()
+{
+    return mAvgBusTimeUs;
+}
+
+uint32_t CCanInterface::lenToDlc(uint8_t len) {
+    switch (len) {
+      case 0:  return FDCAN_DLC_BYTES_0;
+      case 1:  return FDCAN_DLC_BYTES_1;
+      case 2:  return FDCAN_DLC_BYTES_2;
+      case 3:  return FDCAN_DLC_BYTES_3;
+      case 4:  return FDCAN_DLC_BYTES_4;
+      case 5:  return FDCAN_DLC_BYTES_5;
+      case 6:  return FDCAN_DLC_BYTES_6;
+      case 7:  return FDCAN_DLC_BYTES_7;
+      case 8:  return FDCAN_DLC_BYTES_8;
+      case 12: return FDCAN_DLC_BYTES_12;
+      case 16: return FDCAN_DLC_BYTES_16;
+      case 20: return FDCAN_DLC_BYTES_20;
+      case 24: return FDCAN_DLC_BYTES_24;
+      case 32: return FDCAN_DLC_BYTES_32;
+      case 48: return FDCAN_DLC_BYTES_48;
+      default: return FDCAN_DLC_BYTES_64;
+    }
+}
+
+uint8_t CCanInterface::dlcToLen(uint32_t dlc) {
+    switch (dlc) {
+      case FDCAN_DLC_BYTES_0:  return 0;
+      case FDCAN_DLC_BYTES_1:  return 1;
+      case FDCAN_DLC_BYTES_2:  return 2;
+      case FDCAN_DLC_BYTES_3:  return 3;
+      case FDCAN_DLC_BYTES_4:  return 4;
+      case FDCAN_DLC_BYTES_5:  return 5;
+      case FDCAN_DLC_BYTES_6:  return 6;
+      case FDCAN_DLC_BYTES_7:  return 7;
+      case FDCAN_DLC_BYTES_8:  return 8;
+      case FDCAN_DLC_BYTES_12: return 12;
+      case FDCAN_DLC_BYTES_16: return 16;
+      case FDCAN_DLC_BYTES_20: return 20;
+      case FDCAN_DLC_BYTES_24: return 24;
+      case FDCAN_DLC_BYTES_32: return 32;
+      case FDCAN_DLC_BYTES_48: return 48;
+      default:                 return 64;
+    }
+}

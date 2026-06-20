@@ -1,0 +1,168 @@
+# Build System Architecture & Hierarchy
+
+The build environment is organized in a parent-child hierarchy to separate concerns between the dual cores while providing a unified user interface at the root level.
+
+```
+├── Makefile                      # Top-Level Master Makefile
+    ├── CM7/
+    │   ├── Makefile                  # Core-specific Makefile for Cortex-M7
+    │   └── stm32h747xx_flash_CM7.ld  # Linker script for CM7
+    └── CM4/
+        ├── Makefile                  # Core-specific Makefile for Cortex-M4
+        └── stm32h747xx_flash_CM4.ld  # Linker script for CM4
+```
+
+## 1. Top-Level Master Makefile (`Makefile_TopLevel`)
+The root `Makefile` acts as an orchestrator. It does not compile source files directly. Instead, it uses context switching (`cd <dir> && $(MAKE)`) to recursively invoke the sub-makefiles inside the `CM4/` and `CM7/` directories. This allows both cores to be built into completely independent binaries (`.elf`, `.hex`, `.bin`) with specialized compiler configurations matching their respective hardware architectures.
+
+### 2. Cortex-M7 Sub-Makefile (`Makefile_CM7`)
+* **Target:** `ethernet_canfd_gateway_CM7`
+
+### 3. Cortex-M4 Sub-Makefile (`Makefile_CM4`)
+* **Target:** `ethernet_canfd_gateway_CM4`
+
+
+# Build System Targets and Usage
+
+All build interaction should be performed from the **root directory** containing the Top-Level Makefile.
+
+| Command | Action Description |
+| :--- | :--- |
+| `make` / `make all` | Triggers sequential compilation of both cores. Compiles `CM4` first, then `CM7`. Generates binaries within their respective `build/` folders. |
+| `make clean` | Wipes build artifacts. Cleans `CM7`, cleans `CM4`, and deletes the root-level legacy build folder if it exists. |
+| `make flash` | Automatically runs `all` to ensure code is up to date, then uses `st-flash` utility to flash the separate binaries to distinct flash memory sectors via ST-LINK. |
+
+### Flashing Memory Map
+The hardware splits memory sectors explicitly so the cores don't overwrite each other:
+* **Cortex-M7 Firmware** is flashed to base address: `0x08000000`
+* **Cortex-M4 Firmware** is flashed to offset address: `0x08100000`
+
+> **Note on Toolchains:** The build system expects `arm-none-eabi-` utilities in your system path.
+---
+
+## Maintenance & Extension Guide
+
+When adding new files or features to the project, modify the **core-specific Makefiles** (`CM7/Makefile` or `CM4/Makefile`), **not** the Top-Level Makefile.
+
+### 1. Adding Source Files
+Append your code files to the backslash-separated lists under the matching file-type variable:
+
+* **For standard C files (`.c`):** Add to `C_SOURCES`
+* **For Assembly files (`.s`):** Add to `ASM_SOURCES`
+* **For C++ files (`.cpp`):** Add to `CPP_SOURCES`
+
+
+*Example:*
+```makefile
+CPP_SOURCES = \
+../../CM7/App/Src/main_cpp.cpp \
+../../CM7/App/Src/MyNewFeature.cpp
+```
+
+### 2. Adding Include Search Paths
+
+If your new files use header files located in a new directory, inform the preprocessor by adding a path flag (-I<path>).
+
+* **For C headers (visible to C and C++):** Add to `C_INCLUDES`
+* **For C++ specific headers (visible only to C++ compilation):** Add to `CXX_INCLUDES`
+
+Example:
+```makefile
+CXX_INCLUDES = \
+-I../../CM7/App/Inc \
+-I../../Drivers/MyCustomSensor/Inc
+```
+
+### 3. Adding Static Libraries (.a)
+
+If integrating third-party pre-compiled static libraries, locate the LDFLAGS block:
+* Define the path to the library directory using `-L: LIBDIR = -L../../Middlewares/Third_Party/lib`
+* Link the specific library by its short name using `-l: LIBS = -lc -lm -lnosys -lcustom_algo`
+
+## Technical Design & C++ Configuration
+
+Both core subsystems have been natively extended to support Modern C++ (C++17).
+### Compiler Automation
+
+The system automatically detects files appended to CPP_SOURCES and maps their object compilation to the C++ compiler (arm-none-eabi-g++) specified via the CXX variable.
+
+* Dependencies: Preprocessor dependency files (.d) are automatically generated via -MMD -MP flags to guarantee incremental builds compile updated files accurately.
+* Listing Files: Compilation generates detailed assembly listing files (.lst) in the build folder for deep debugging analysis.
+
+# Custom RAM Management & Linker Scripts
+
+In specialized dual-core applications like this robotic arm system, standard RAM allocation is often insufficient. Peripherals such as the Ethernet MAC (LwIP) require dedicated, un-cached memory boundaries to function correctly. This is controlled strictly by the core's Linker Script (.ld).
+
+## 1. Memory Regions (MEMORY)
+
+The linker script partitions your hardware into named segments. Take note of specialized structures like `RAM_ETH`:
+
+```
+MEMORY
+{
+  FLASH (rx)      : ORIGIN = 0x08100000, LENGTH = 1024K
+  RAM (xrw)       : ORIGIN = 0x10000000, LENGTH = 256K
+  RAM_ETH (xrw)   : ORIGIN = 0x10040000, LENGTH = 32K   /* Ethernet Descriptors */
+}
+```
+
+## 2. Targeting Specific RAM Regions (SECTIONS)
+Hardware generated by STM32CubeMX often relies on hard-coded memory pointers or expects critical buffers to exist at fixed physical locations. This requires blocking those sections so that the linker script can isolate them into designated memory blocks (like `RAM_ETH`). If these sections are not strictly defined and isolated as `NOLOAD` or separate memory banks in the linker script, the linker may overlap standard stack or heap allocations with the DMA memory, leading to silent memory corruption during runtime.
+
+Example:
+* Ethernet Descriptors: The block below catches files/variables containing *(.RxDescripSection)* or *(.TxDescripSection)* and locks them into the distinct RAM_ETH region:
+
+```
+/* ehternet Descriptors */
+  .lwip_sec (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(.RxDescripSection)
+    *(.TxDescripSection)
+    . = ALIGN(4);
+  } > RAM_ETH
+```
+* Fixed Address Allocations (LwIP Heap): You can force a block to align explicitly to a specific memory offset (e.g., 0x10038000) within a section:
+```
+.lwip_heap 0x10038000 (NOLOAD) :
+{
+  . = ALIGN(4);
+  _slwip_heap = .;
+  . = . + 32763; /* Corresponds to MEM_SIZE from CubeMX */
+  _elwip_heap = .;
+  . = ALIGN(4);
+} > RAM
+```
+
+## Code-Size Analysis & Flash/RAM Inspection
+
+When developing firmware, tracking the usage of RAM and Flash memory is critical to prevent stack overflows and build compilation errors.
+### 1. Automatic Size Checking (make)
+Every time a successful build occurs, the sub-makefile automatically invokes arm-none-eabi-size on the generated .elf binary files. The output will look similar to this:
+```
+text    data     bss     dec     hex filename
+  42140    1204   54120   97464   17cb8 build/ethernet_canfd_gateway_CM4.elf
+```
+### 2. Interpreting the Memory Columns
+
+* **text (Flash):** The exact size of your read-only code segments, including instructions, functions, execution code, and mathematical constants (.text, .rodata, .isr_vector).
+
+* **data (Flash & RAM):** This segment counts static or global variables that have initialized values assigned at compile time (e.g. int global_var = 42;). It consumes space in Flash (to save the initialization value) and space in RAM during execution.
+
+* **bss (RAM Only):** This accounts for uninitialized or zero-initialized variables (e.g. int raw_buffer[1024];). It consumes zero space in Flash but maps directly into active runtime RAM.
+
+### 3. Inspecting Memory via Command Line
+
+If you need to analyze memory allocation in more detail, navigate to the respective core directory and use the GNU Binutils toolchain:
+Detailed Overview (Size Tool)
+```bash
+arm-none-eabi-size -A -x CM4/build/ethernet_canfd_gateway_CM4.elf
+```
+> This switch displays a comprehensive breakdown of every single section defined inside your Linker Script.
+### 4. Locating Memory Hogs (Object Dump Tool)
+
+To pinpoint exactly which global arrays, functions, or C++ objects are taking up the most space, run nm sorted by size:
+```bash
+arm-none-eabi-nm --print-size --size-sort --radix=d CM4/build/ethernet_canfd_gateway_CM4.elf
+```
+> Look through this output to trace exactly which modules or classes are utilizing your microcontroller resources.
