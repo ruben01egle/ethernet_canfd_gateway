@@ -7,7 +7,9 @@
 
 class CCanInterface {
 public:
-    CCanInterface(FDCAN_HandleTypeDef* pHandler);
+    typedef void (*LogFunc)(const char*);
+public:
+    CCanInterface(FDCAN_HandleTypeDef* pHandler, LogFunc pLogFun);
 
     uint32_t executeTransaction(const MoteusCanFrame* pTxFrames, uint32_t pTxCount, 
                                  uint32_t pExpectedReplies, uint32_t pTimeoutUs,
@@ -15,12 +17,14 @@ public:
     float getAvgBusTime();
 
 private:
-    static uint32_t lenToDlc(uint8_t len);
-    static uint8_t dlcToLen(uint32_t dlc);
+    uint32_t lenToDlc(uint8_t len);
+    uint8_t dlcToLen(uint32_t dlc);
+    void recover_bus_error();
 
 private:
     FDCAN_HandleTypeDef* mHfdcan;
     CClock mCLock;
+    LogFunc logger;
 
     uint32_t mLastBusTimeUs = 0;
     float mAvgBusTimeUs = 0.0f;

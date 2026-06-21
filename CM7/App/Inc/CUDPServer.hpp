@@ -33,7 +33,7 @@ private:
 
     bool mPendingTransaction;
     UdpRequestHeader mActiveHeader;
-    static constexpr uint32_t MAX_FRAMES_PER_TRANSACTION = 12;
+    static constexpr uint32_t MAX_FRAMES_PER_TRANSACTION = 32;
     MoteusCanFrame mTxFrames[MAX_FRAMES_PER_TRANSACTION];
 
     ip_addr_t mPeerAddr;

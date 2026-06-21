@@ -33,7 +33,7 @@ extern "C" void main_cpp()
     // Call master init for link once from cm7
     CInterCoreLink& dataLink = CInterCoreLink::getInstance();
     CUDPServer udpServer(logger_wrapper);
-    CCanInterface canInterface(&hfdcan1);
+    CCanInterface canInterface(&hfdcan1, logger_wrapper);
 
     udpServer.begin(6666);
     CInterCoreLink::IpAddr ipBuffer;

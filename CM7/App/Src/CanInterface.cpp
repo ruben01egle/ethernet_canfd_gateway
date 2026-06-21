@@ -1,7 +1,7 @@
 #include "CanInterface.hpp"
 #include <cstring>
 
-CCanInterface::CCanInterface(FDCAN_HandleTypeDef* pHandler) : mHfdcan(pHandler) {
+CCanInterface::CCanInterface(FDCAN_HandleTypeDef* pHandler, LogFunc pLogFun) : mHfdcan(pHandler), logger(pLogFun) {
     mCLock.reset();
 }
 
@@ -10,6 +10,12 @@ uint32_t CCanInterface::executeTransaction(const MoteusCanFrame* pTxFrames, uint
                                              MoteusCanFrame* pOutRxFrames, uint32_t pMaxRxCapacity) 
 {
     uint32_t start_us = mCLock.getUS();
+
+    FDCAN_RxHeaderTypeDef stale_rx_header = {};
+    uint8_t stale_rx_data[64] = {};
+    while (HAL_FDCAN_GetRxFifoFillLevel(mHfdcan, FDCAN_RX_FIFO0) > 0) {
+        HAL_FDCAN_GetRxMessage(mHfdcan, FDCAN_RX_FIFO0, &stale_rx_header, stale_rx_data);
+    }
 
     for (uint32_t i = 0; i < pTxCount; i++) {
         const MoteusCanFrame& src = pTxFrames[i];
@@ -25,10 +31,19 @@ uint32_t CCanInterface::executeTransaction(const MoteusCanFrame* pTxFrames, uint
         txHeader.TxEventFifoControl  = FDCAN_NO_TX_EVENTS;
         txHeader.MessageMarker       = 0;
 
+        
         while (HAL_FDCAN_GetTxFifoFreeLevel(mHfdcan) == 0) {
-            // burst guard for hw queue
+            if (mCLock.getUS() - start_us > pTimeoutUs) {
+                recover_bus_error();
+                logger("CAN Bus error: could not transmit frames in time. Restarting bus.");
+                return 0;
+            }
         }
-        HAL_FDCAN_AddMessageToTxFifoQ(mHfdcan, &txHeader, const_cast<uint8_t*>(src.data));
+        if (HAL_FDCAN_AddMessageToTxFifoQ(mHfdcan, &txHeader, const_cast<uint8_t*>(src.data)) != HAL_OK) {
+            recover_bus_error();
+            logger("CAN Bus error: could not add frame to fifo. Restarting bus.");
+            return 0;
+        }
     }
 
     uint32_t receivedCount = 0;
@@ -115,5 +130,16 @@ uint8_t CCanInterface::dlcToLen(uint32_t dlc) {
       case FDCAN_DLC_BYTES_32: return 32;
       case FDCAN_DLC_BYTES_48: return 48;
       default:                 return 64;
+    }
+}
+
+void CCanInterface::recover_bus_error()
+{
+    FDCAN_ProtocolStatusTypeDef status = {};
+    if (HAL_FDCAN_GetProtocolStatus(mHfdcan, &status) == HAL_OK
+        && status.BusOff) {
+      HAL_FDCAN_AbortTxRequest(mHfdcan, 0xFF);
+      HAL_FDCAN_Stop(mHfdcan);
+      HAL_FDCAN_Start(mHfdcan);
     }
 }
