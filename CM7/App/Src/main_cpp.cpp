@@ -60,7 +60,7 @@ extern "C" void main_cpp()
 {
     // Call master init for link once from cm7
     CInterCoreLink& dataLink = CInterCoreLink::getInstance();
-    HAL_Delay(10000);
+    //HAL_Delay(10000);
     if (!moteus1.SetStop()) {
         logger_wrapper("reset motor failed!");
         FDCAN_ProtocolStatusTypeDef status = {};
