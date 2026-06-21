@@ -16,10 +16,10 @@ The build environment is organized in a parent-child hierarchy to separate conce
 The root `Makefile` acts as an orchestrator. It does not compile source files directly. Instead, it uses context switching (`cd <dir> && $(MAKE)`) to recursively invoke the sub-makefiles inside the `CM4/` and `CM7/` directories. This allows both cores to be built into completely independent binaries (`.elf`, `.hex`, `.bin`) with specialized compiler configurations matching their respective hardware architectures.
 
 ### 2. Cortex-M7 Sub-Makefile (`Makefile_CM7`)
-* **Target:** `ethernet_canfd_gateway_CM7`
+* **Target:** `stm32_moteus_canfd_CM7`
 
 ### 3. Cortex-M4 Sub-Makefile (`Makefile_CM4`)
-* **Target:** `ethernet_canfd_gateway_CM4`
+* **Target:** `stm32_moteus_canfd_CM4`
 
 
 # Build System Targets and Usage
@@ -141,7 +141,7 @@ When developing firmware, tracking the usage of RAM and Flash memory is critical
 Every time a successful build occurs, the sub-makefile automatically invokes arm-none-eabi-size on the generated .elf binary files. The output will look similar to this:
 ```
 text    data     bss     dec     hex filename
-  42140    1204   54120   97464   17cb8 build/ethernet_canfd_gateway_CM4.elf
+  42140    1204   54120   97464   17cb8 build/stm32_moteus_canfd_CM4.elf
 ```
 ### 2. Interpreting the Memory Columns
 
@@ -156,13 +156,13 @@ text    data     bss     dec     hex filename
 If you need to analyze memory allocation in more detail, navigate to the respective core directory and use the GNU Binutils toolchain:
 Detailed Overview (Size Tool)
 ```bash
-arm-none-eabi-size -A -x CM4/build/ethernet_canfd_gateway_CM4.elf
+arm-none-eabi-size -A -x CM4/build/stm32_moteus_canfd_CM4.elf
 ```
 > This switch displays a comprehensive breakdown of every single section defined inside your Linker Script.
 ### 4. Locating Memory Hogs (Object Dump Tool)
 
 To pinpoint exactly which global arrays, functions, or C++ objects are taking up the most space, run nm sorted by size:
 ```bash
-arm-none-eabi-nm --print-size --size-sort --radix=d CM4/build/ethernet_canfd_gateway_CM4.elf
+arm-none-eabi-nm --print-size --size-sort --radix=d CM4/build/stm32_moteus_canfd_CM4.elf
 ```
 > Look through this output to trace exactly which modules or classes are utilizing your microcontroller resources.
