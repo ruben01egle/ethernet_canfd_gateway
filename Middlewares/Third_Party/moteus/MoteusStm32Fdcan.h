@@ -293,7 +293,7 @@ class MoteusStm32FdCan {
 
     return HAL_FDCAN_Start(hfdcan_) == HAL_OK;
   }
-
+public:
   /// Convert an STM32 HAL DLC code to a byte count.
   static uint8_t dlcToLen(uint32_t dlc) {
     switch (dlc) {

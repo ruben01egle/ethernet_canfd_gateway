@@ -7,8 +7,21 @@
 
 #include "CInterCoreLink.hpp"
 
+#include "Moteus.h"
+#include "MoteusStm32Fdcan.h"
+#include "moteus_multiplex.h"
+
 extern FDCAN_HandleTypeDef hfdcan1;
 
+static auto make_options() {
+  MoteusController<MoteusStm32FdCan>::Options options;
+  options.id = 1;
+  options.disable_brs = false;
+  return options;
+}
+
+MoteusStm32FdCan canBus = MoteusStm32FdCan(&hfdcan1);
+MoteusController<MoteusStm32FdCan> moteus1(canBus, make_options());
 
 void logger_wrapper(const char* pMessage) 
 {
@@ -20,6 +33,36 @@ void logger_wrapper(const char* pMessage)
     msg.text[sizeof(msg.text) - 1] = '\0';
     
     link.mSharedMemory.log_msg.push(msg); 
+}
+
+void send_canfd(FDCAN_ProtocolStatusTypeDef& status, FDCAN_TxHeaderTypeDef& tx_header, uint8_t* tx_data)
+{
+    // 1. VOR dem Senden prüfen: Sind wir im Bus-Off?
+    HAL_FDCAN_GetProtocolStatus(&hfdcan1, &status);
+    if (status.DataLastErrorCode != 0) {
+    char error_msg[64];
+        // status.DataLastErrorCode: 1=Stuff, 2=Form, 3=Ack, 4=Bit1, 5=Bit0, 6=CRC
+        sprintf(error_msg, "CAN Data Error LEC: %d", status.DataLastErrorCode);
+        logger_wrapper(error_msg);
+    }
+    if (status.BusOff) 
+    {
+        logger_wrapper("CAN Bus-Off erkannt! Reinitialisiere...");
+        
+        // Hard-Reset der CAN-Peripherie, um die Error-Counter zu nullen
+        HAL_FDCAN_Stop(&hfdcan1);
+        
+        // Wichtig: Alle alten, blockierten Sendeanforderungen löschen
+        HAL_FDCAN_AbortTxRequest(&hfdcan1, 0xFFFFFFFF); 
+        
+        HAL_FDCAN_Start(&hfdcan1);
+    }
+
+    // 2. Normaler Sendeversuch
+    if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1) > 0) 
+    {
+        HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &tx_header, tx_data);
+    }
 }
 
 extern "C" void init_cpp()
@@ -39,51 +82,65 @@ extern "C" void main_cpp()
     // Call master init for link once from cm7
     CInterCoreLink& dataLink = CInterCoreLink::getInstance();
 
+    mm::CanFdFrame stop_frame = moteus1.MakeStop();
+    int8_t rounded_size_stop = mm::RoundUpDlc(stop_frame.size);
+    for (int8_t i = stop_frame.size; i < rounded_size_stop; i++) {
+        stop_frame.data[i] = 0x50;
+    }
+    stop_frame.size = rounded_size_stop;
+
     // Definition der Strukturen (sollten vor der Schleife stehen)
     FDCAN_ProtocolStatusTypeDef status = {};
-    FDCAN_TxHeaderTypeDef TxHeader;
-    uint8_t TxData[64]; // CAN FD erlaubt bis zu 64 Byte Daten
+    FDCAN_TxHeaderTypeDef TxHeaderStop = {};
+    uint8_t TxDataStop[64]; // CAN FD erlaubt bis zu 64 Byte Daten
 
     // 1. Konfiguration des TX-Headers für CAN FD mit BRS
-    TxHeader.Identifier = 0x55;                           // Test-ID
-    TxHeader.IdType = FDCAN_STANDARD_ID;
-    TxHeader.TxFrameType = FDCAN_DATA_FRAME;
-    TxHeader.DataLength = FDCAN_DLC_BYTES_64;              // Maximale CAN FD Länge (64 Bytes)
-    TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
-    TxHeader.BitRateSwitch = FDCAN_BRS_ON;                 // <--- HIER schaltet der STM32 auf 5 Mbit/s!
-    TxHeader.FDFormat = FDCAN_FD_CAN;                      // Es ist ein CAN FD Frame
-    TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
-    TxHeader.MessageMarker = 0;
+    TxHeaderStop.Identifier = stop_frame.arbitration_id;                           // Test-ID
+    TxHeaderStop.IdType = FDCAN_EXTENDED_ID;
+    TxHeaderStop.TxFrameType = FDCAN_DATA_FRAME;
+    TxHeaderStop.DataLength = MoteusStm32FdCan::lenToDlc(stop_frame.size);
+    TxHeaderStop.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+    TxHeaderStop.BitRateSwitch = FDCAN_BRS_ON;                 // <--- HIER schaltet der STM32 auf 5 Mbit/s!
+    TxHeaderStop.FDFormat = FDCAN_FD_CAN;                      // Es ist ein CAN FD Frame
+    TxHeaderStop.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+    TxHeaderStop.MessageMarker = 0;
 
-    // 2. Füllen des Daten-Arrays mit abwechselnden Bits (0x55 = 01010101b)
-    for(int i = 0; i < 64; i++) {
-        TxData[i] = 0x55; 
+    ::memcpy(TxDataStop, &stop_frame.data[0], stop_frame.size);
+
+
+    MoteusController<MoteusStm32FdCan>::PositionMode::Command cmd;
+    cmd.position = NaN;
+    cmd.velocity = 0.0;
+    mm::CanFdFrame pos_frame = moteus1.MakePosition(cmd);
+    int8_t rounded_size_pos = mm::RoundUpDlc(pos_frame.size);
+    for (int8_t i = pos_frame.size; i < rounded_size_pos; i++) {
+        pos_frame.data[i] = 0x50;
     }
+    pos_frame.size = rounded_size_pos;
+
+    FDCAN_TxHeaderTypeDef TxHeaderPos = {};
+    uint8_t TxDataPos[64]; // CAN FD erlaubt bis zu 64 Byte Daten
+
+    // 1. Konfiguration des TX-Headers für CAN FD mit BRS
+    TxHeaderPos.Identifier = pos_frame.arbitration_id;                           // Test-ID
+    TxHeaderPos.IdType = FDCAN_EXTENDED_ID;
+    TxHeaderPos.TxFrameType = FDCAN_DATA_FRAME;
+    TxHeaderPos.DataLength = MoteusStm32FdCan::lenToDlc(pos_frame.size);
+    TxHeaderPos.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+    TxHeaderPos.BitRateSwitch = FDCAN_BRS_ON;                 // <--- HIER schaltet der STM32 auf 5 Mbit/s!
+    TxHeaderPos.FDFormat = FDCAN_FD_CAN;                      // Es ist ein CAN FD Frame
+    TxHeaderPos.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+    TxHeaderPos.MessageMarker = 0;
+
+    ::memcpy(TxDataPos, &pos_frame.data[0], pos_frame.size);
+
+    send_canfd(status, TxHeaderStop, TxDataStop);
 
     // 3. Die Sende-Schleife
     while (1) 
     {
-        // 1. VOR dem Senden prüfen: Sind wir im Bus-Off?
-        HAL_FDCAN_GetProtocolStatus(&hfdcan1, &status);
-        if (status.BusOff) 
-        {
-            logger_wrapper("CAN Bus-Off erkannt! Reinitialisiere...");
-            
-            // Hard-Reset der CAN-Peripherie, um die Error-Counter zu nullen
-            HAL_FDCAN_Stop(&hfdcan1);
-            
-            // Wichtig: Alle alten, blockierten Sendeanforderungen löschen
-            HAL_FDCAN_AbortTxRequest(&hfdcan1, 0xFFFFFFFF); 
-            
-            HAL_FDCAN_Start(&hfdcan1);
-        }
-
-        // 2. Normaler Sendeversuch
-        if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1) > 0) 
-        {
-            HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, TxData);
-        }
-
+        
+        send_canfd(status, TxHeaderPos, TxDataPos);
         // 3. Etwas mehr Zeit lassen (50ms), damit man die "Bursts" auf dem Oszi schön jagen kann
         HAL_Delay(50); 
     }
