@@ -78,6 +78,18 @@ void MX_FDCAN1_Init(void)
   {
     Error_Handler();
   }
+
+  uint32_t tdco = hfdcan1.Init.DataPrescaler * hfdcan1.Init.DataTimeSeg1;
+  if (HAL_FDCAN_ConfigTxDelayCompensation(&hfdcan1,
+                                          tdco,
+                                          0U) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_FDCAN_EnableTxDelayCompensation(&hfdcan1) != HAL_OK)
+  {
+    Error_Handler();
+  }
   /* USER CODE END FDCAN1_Init 2 */
 
 }

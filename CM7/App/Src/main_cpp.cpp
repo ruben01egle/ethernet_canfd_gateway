@@ -6,31 +6,9 @@
 #include <inttypes.h>
 
 #include "CInterCoreLink.hpp"
-#include "MoteusStm32Fdcan.h"
 
 extern FDCAN_HandleTypeDef hfdcan1;
 
-uint32_t moteus_micros() {
-  // HAL_GetTick() returns milliseconds.  For true microsecond resolution,
-  // use the DWT cycle counter or a dedicated hardware timer.
-  return HAL_GetTick() * 1000;
-}
-
-void moteus_delay_ms(uint32_t ms) {
-  HAL_Delay(ms);
-}
-
-MoteusStm32FdCan canBus = MoteusStm32FdCan(&hfdcan1);
-
-// Options must be set before constructing the controller.
-static auto make_options() {
-  MoteusController<MoteusStm32FdCan>::Options options;
-  options.id = 1;
-  options.disable_brs = false;
-  return options;
-}
-
-MoteusController<MoteusStm32FdCan> moteus1(canBus, make_options());
 
 void logger_wrapper(const char* pMessage) 
 {
@@ -60,56 +38,54 @@ extern "C" void main_cpp()
 {
     // Call master init for link once from cm7
     CInterCoreLink& dataLink = CInterCoreLink::getInstance();
-    if (!moteus1.SetStop()) {
-        logger_wrapper("reset motor failed!");
-        FDCAN_ProtocolStatusTypeDef status = {};
-        HAL_FDCAN_GetProtocolStatus(&hfdcan1, &status);
-        FDCAN_ErrorCountersTypeDef err = {};
-        HAL_FDCAN_GetErrorCounters(&hfdcan1, &err);
 
-        char buf[160];
-        snprintf(buf, sizeof(buf),
-                "LEC=%" PRIu32 " DLEC=%" PRIu32 " BO=%" PRIu32 " EP=%" PRIu32 " TEC=%" PRIu32 " REC=%" PRIu32,
-                status.LastErrorCode, status.DataLastErrorCode,
-                status.BusOff, status.ErrorPassive,
-                err.TxErrorCnt, err.RxErrorCnt);
-        logger_wrapper(buf);
-        Error_Handler();
+    // Definition der Strukturen (sollten vor der Schleife stehen)
+    FDCAN_ProtocolStatusTypeDef status = {};
+    FDCAN_TxHeaderTypeDef TxHeader;
+    uint8_t TxData[64]; // CAN FD erlaubt bis zu 64 Byte Daten
+
+    // 1. Konfiguration des TX-Headers für CAN FD mit BRS
+    TxHeader.Identifier = 0x55;                           // Test-ID
+    TxHeader.IdType = FDCAN_STANDARD_ID;
+    TxHeader.TxFrameType = FDCAN_DATA_FRAME;
+    TxHeader.DataLength = FDCAN_DLC_BYTES_64;              // Maximale CAN FD Länge (64 Bytes)
+    TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+    TxHeader.BitRateSwitch = FDCAN_BRS_ON;                 // <--- HIER schaltet der STM32 auf 5 Mbit/s!
+    TxHeader.FDFormat = FDCAN_FD_CAN;                      // Es ist ein CAN FD Frame
+    TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+    TxHeader.MessageMarker = 0;
+
+    // 2. Füllen des Daten-Arrays mit abwechselnden Bits (0x55 = 01010101b)
+    for(int i = 0; i < 64; i++) {
+        TxData[i] = 0x55; 
     }
-    logger_wrapper("reset motor");
 
-    uint32_t next_send = HAL_GetTick();
-
-    while (true) {
-        const uint32_t now = HAL_GetTick();
-        if (now < next_send) { continue; }
-        next_send += 20;  // 50 Hz
-
-        MoteusController<MoteusStm32FdCan>::PositionMode::Command cmd;
-        cmd.position = NaN;
-        cmd.velocity = 0.0;
-
-        if (!moteus1.SetPosition(cmd)) {
-            logger_wrapper("set position failed!");
-            FDCAN_ProtocolStatusTypeDef status = {};
-            HAL_FDCAN_GetProtocolStatus(&hfdcan1, &status);
-
-            char buf[128];
-            snprintf(buf, sizeof(buf),
-                "LEC=%" PRIu32 " DLEC=%" PRIu32 " BO=%" PRIu32 " EP=%" PRIu32 " EW=%" PRIu32 " TxFifoFree=%" PRIu32,
-                status.LastErrorCode, 
-                status.DataLastErrorCode,
-                status.BusOff, 
-                status.ErrorPassive, 
-                status.Warning,
-                HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1));
-            logger_wrapper(buf);
-            Error_Handler();
+    // 3. Die Sende-Schleife
+    while (1) 
+    {
+        // 1. VOR dem Senden prüfen: Sind wir im Bus-Off?
+        HAL_FDCAN_GetProtocolStatus(&hfdcan1, &status);
+        if (status.BusOff) 
+        {
+            logger_wrapper("CAN Bus-Off erkannt! Reinitialisiere...");
+            
+            // Hard-Reset der CAN-Peripherie, um die Error-Counter zu nullen
+            HAL_FDCAN_Stop(&hfdcan1);
+            
+            // Wichtig: Alle alten, blockierten Sendeanforderungen löschen
+            HAL_FDCAN_AbortTxRequest(&hfdcan1, 0xFFFFFFFF); 
+            
+            HAL_FDCAN_Start(&hfdcan1);
         }
 
-        // Access the most recent query result:
-        // const auto& result = moteus1.last_result().values;
-        // result.position, result.velocity, result.torque, etc.
+        // 2. Normaler Sendeversuch
+        if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1) > 0) 
+        {
+            HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, TxData);
+        }
+
+        // 3. Etwas mehr Zeit lassen (50ms), damit man die "Bursts" auf dem Oszi schön jagen kann
+        HAL_Delay(50); 
     }
     
 }
