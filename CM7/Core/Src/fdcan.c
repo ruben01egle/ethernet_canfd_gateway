@@ -43,10 +43,10 @@ void MX_FDCAN1_Init(void)
   hfdcan1.Init.AutoRetransmission = DISABLE;
   hfdcan1.Init.TransmitPause = DISABLE;
   hfdcan1.Init.ProtocolException = DISABLE;
-  hfdcan1.Init.NominalPrescaler = 5;
-  hfdcan1.Init.NominalSyncJumpWidth = 5;
-  hfdcan1.Init.NominalTimeSeg1 = 10;
-  hfdcan1.Init.NominalTimeSeg2 = 5;
+  hfdcan1.Init.NominalPrescaler = 1;
+  hfdcan1.Init.NominalSyncJumpWidth = 16;
+  hfdcan1.Init.NominalTimeSeg1 = 53;
+  hfdcan1.Init.NominalTimeSeg2 = 26;
   hfdcan1.Init.DataPrescaler = 1;
   hfdcan1.Init.DataSyncJumpWidth = 5;
   hfdcan1.Init.DataTimeSeg1 = 10;
@@ -79,10 +79,11 @@ void MX_FDCAN1_Init(void)
     Error_Handler();
   }
 
-  uint32_t tdco = hfdcan1.Init.DataPrescaler * hfdcan1.Init.DataTimeSeg1;
+  uint32_t tdco = 13;
+  uint32_t tdcf = 2;
   if (HAL_FDCAN_ConfigTxDelayCompensation(&hfdcan1,
                                           tdco,
-                                          0U) != HAL_OK)
+                                          tdcf) != HAL_OK)
   {
     Error_Handler();
   }

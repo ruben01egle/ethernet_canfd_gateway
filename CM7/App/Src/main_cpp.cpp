@@ -39,7 +39,7 @@ void send_canfd(FDCAN_ProtocolStatusTypeDef& status, FDCAN_TxHeaderTypeDef& tx_h
 {
     // 1. VOR dem Senden prüfen: Sind wir im Bus-Off?
     HAL_FDCAN_GetProtocolStatus(&hfdcan1, &status);
-    if (status.DataLastErrorCode != 0) {
+    if (status.DataLastErrorCode != 0 && status.DataLastErrorCode != 7) {
     char error_msg[64];
         // status.DataLastErrorCode: 1=Stuff, 2=Form, 3=Ack, 4=Bit1, 5=Bit0, 6=CRC
         sprintf(error_msg, "CAN Data Error LEC: %d", status.DataLastErrorCode);
