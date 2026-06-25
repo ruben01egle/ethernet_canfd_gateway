@@ -38,6 +38,7 @@ extern "C" void main_cpp()
     udpServer.begin(6666);
     CInterCoreLink::IpAddr ipBuffer;
     while(true) {
+        udpServer.updateServer();
         if (udpServer.getIpAddress(ipBuffer.ipAddress)) {
             dataLink.mSharedMemory.ip_addr.push(ipBuffer); 
             
@@ -47,6 +48,7 @@ extern "C" void main_cpp()
             
             break;
         }
+        HAL_Delay(100);
     }
     
     while(true) {

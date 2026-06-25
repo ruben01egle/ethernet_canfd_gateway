@@ -221,17 +221,18 @@ SECTIONS
   } >RAM
 
   
-  /* ehternet Descriptors */
+  /* ethernet Descriptors */
   .lwip_sec 0x30000000 (NOLOAD) :
   {
     . = ALIGN(4);
     *(.RxDescripSection)
     *(.TxDescripSection)
+    *(.Rx_PoolSection)
     . = ALIGN(4);
   } > NETWORK_RAM
 
-  /* LwIP Heap/
-  .lwip_heap 0x30004000 (NOLOAD) :
+  /* LwIP Heap */
+  .lwip_heap 0x30008000 (NOLOAD) :
   {
     . = ALIGN(4);
     _slwip_heap = .;

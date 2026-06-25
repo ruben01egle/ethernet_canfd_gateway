@@ -49,24 +49,6 @@
                 "cwd": "${workspaceFolder}/Makefile/CM4"
             },
             "group": "build"
-        },
-        {
-            "label": "build robotarm_interface ROS",
-            "type": "shell",
-            "command": "cd robotarm_interface && python3 build_cpp.py",
-            "problemMatcher": [],
-            "group": {
-                "kind": "build",
-                "isDefault": false
-            },
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": true,
-                "panel": "shared",
-                "showReuseMessage": true,
-                "clear": false
-            }
-        },
+        }
     ]
 }

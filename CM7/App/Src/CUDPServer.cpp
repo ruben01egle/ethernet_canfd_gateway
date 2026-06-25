@@ -48,9 +48,7 @@ bool CUDPServer::getIpAddress(char* pOutBuffer)
 
 void CUDPServer::updateServer()
 {
-    extern struct netif gnetif;
-    ethernetif_input(&gnetif);
-    sys_check_timeouts();
+    MX_LWIP_Process();
 }
 
 bool CUDPServer::sendResponse(const MoteusCanFrame* pResponseFrames, uint32_t pCount) {
