@@ -24,6 +24,27 @@ static auto make_options() {
 MoteusStm32FdCan canBus = MoteusStm32FdCan(&hfdcan1);
 MoteusController<MoteusStm32FdCan> moteus1(canBus, make_options());
 
+uint8_t dlcToLen(uint32_t dlc) {
+    switch (dlc) {
+      case FDCAN_DLC_BYTES_0:  return 0;
+      case FDCAN_DLC_BYTES_1:  return 1;
+      case FDCAN_DLC_BYTES_2:  return 2;
+      case FDCAN_DLC_BYTES_3:  return 3;
+      case FDCAN_DLC_BYTES_4:  return 4;
+      case FDCAN_DLC_BYTES_5:  return 5;
+      case FDCAN_DLC_BYTES_6:  return 6;
+      case FDCAN_DLC_BYTES_7:  return 7;
+      case FDCAN_DLC_BYTES_8:  return 8;
+      case FDCAN_DLC_BYTES_12: return 12;
+      case FDCAN_DLC_BYTES_16: return 16;
+      case FDCAN_DLC_BYTES_20: return 20;
+      case FDCAN_DLC_BYTES_24: return 24;
+      case FDCAN_DLC_BYTES_32: return 32;
+      case FDCAN_DLC_BYTES_48: return 48;
+      default:                 return 64;
+    }
+}
+
 void logger_wrapper(const char* pMessage) 
 {
     CInterCoreLink& link = CInterCoreLink::getInstance();
@@ -88,6 +109,109 @@ void MakePos(MoteusController<MoteusStm32FdCan>& controller, FDCAN_TxHeaderTypeD
     txHeader.MessageMarker = 0;
 
     ::memcpy(txData, &pos_frame.data[0], pos_frame.size);
+}
+
+void compare_can_frames(const FDCAN_TxHeaderTypeDef& expectedHeader, const uint8_t* expectedData,
+                         const FDCAN_TxHeaderTypeDef& actualHeader, const uint8_t* actualData,
+                         const char* contextName) 
+{
+    char logBuf[128];
+    bool mismatchDetected = false;
+
+    snprintf(logBuf, sizeof(logBuf), "--- Vergleiche [%s] mit Test-Frame ---", contextName);
+    logger_wrapper(logBuf);
+
+    if (expectedHeader.Identifier != actualHeader.Identifier) {
+        snprintf(logBuf, sizeof(logBuf), "Mismatch Identifier: Erwartet 0x%LX, Erhalten 0x%LX", expectedHeader.Identifier, actualHeader.Identifier);
+        logger_wrapper(logBuf);
+        mismatchDetected = true;
+    }
+
+    // 2. IdType (Standard- oder Extended ID)
+    if (expectedHeader.IdType != actualHeader.IdType) {
+        snprintf(logBuf, sizeof(logBuf), "Mismatch IdType: Erwartet 0x%LX (%s), Erhalten 0x%LX (%s)", 
+                 expectedHeader.IdType, (expectedHeader.IdType == FDCAN_EXTENDED_ID) ? "EXT" : "STD",
+                 actualHeader.IdType, (actualHeader.IdType == FDCAN_EXTENDED_ID) ? "EXT" : "STD");
+        logger_wrapper(logBuf);
+        mismatchDetected = true;
+    }
+
+    // 3. TxFrameType (Data Frame oder Remote Frame)
+    if (expectedHeader.TxFrameType != actualHeader.TxFrameType) {
+        snprintf(logBuf, sizeof(logBuf), "Mismatch TxFrameType: Erwartet 0x%LX, Erhalten 0x%LX", expectedHeader.TxFrameType, actualHeader.TxFrameType);
+        logger_wrapper(logBuf);
+        mismatchDetected = true;
+    }
+
+    // 4. DataLength (DLC)
+    if (expectedHeader.DataLength != actualHeader.DataLength) {
+        snprintf(logBuf, sizeof(logBuf), "Mismatch DataLength (DLC): Erwartet 0x%LX, Erhalten 0x%LX", expectedHeader.DataLength, actualHeader.DataLength);
+        logger_wrapper(logBuf);
+        mismatchDetected = true;
+    }
+
+    // 5. ErrorStateIndicator (ESI - Aktiv/Passiv)
+    if (expectedHeader.ErrorStateIndicator != actualHeader.ErrorStateIndicator) {
+        snprintf(logBuf, sizeof(logBuf), "Mismatch ErrorStateIndicator: Erwartet 0x%LX, Erhalten 0x%LX", expectedHeader.ErrorStateIndicator, actualHeader.ErrorStateIndicator);
+        logger_wrapper(logBuf);
+        mismatchDetected = true;
+    }
+
+    // 6. BitRateSwitch (BRS - Umschalten auf z.B. 5 Mbit/s)
+    if (expectedHeader.BitRateSwitch != actualHeader.BitRateSwitch) {
+        snprintf(logBuf, sizeof(logBuf), "Mismatch BitRateSwitch (BRS): Erwartet %s, Erhalten %s", 
+                 (expectedHeader.BitRateSwitch == FDCAN_BRS_ON) ? "AN" : "AUS", 
+                 (actualHeader.BitRateSwitch == FDCAN_BRS_ON) ? "AN" : "AUS");
+        logger_wrapper(logBuf);
+        mismatchDetected = true;
+    }
+
+    // 7. FDFormat (Klassisches CAN vs. CAN FD)
+    if (expectedHeader.FDFormat != actualHeader.FDFormat) {
+        snprintf(logBuf, sizeof(logBuf), "Mismatch FDFormat: Erwartet 0x%LX (%s), Erhalten 0x%LX (%s)", 
+                 expectedHeader.FDFormat, (expectedHeader.FDFormat == FDCAN_FD_CAN) ? "FD" : "Classic",
+                 actualHeader.FDFormat, (actualHeader.FDFormat == FDCAN_FD_CAN) ? "FD" : "Classic");
+        logger_wrapper(logBuf);
+        mismatchDetected = true;
+    }
+
+    // 8. TxEventFifoControl (Soll das Event im FIFO landen?)
+    if (expectedHeader.TxEventFifoControl != actualHeader.TxEventFifoControl) {
+        snprintf(logBuf, sizeof(logBuf), "Mismatch TxEventFifoControl: Erwartet 0x%LX, Erhalten 0x%LX", expectedHeader.TxEventFifoControl, actualHeader.TxEventFifoControl);
+        logger_wrapper(logBuf);
+        mismatchDetected = true;
+    }
+
+    // 9. MessageMarker (Identifikationsmarker für die Applikation)
+    if (expectedHeader.MessageMarker != actualHeader.MessageMarker) {
+        snprintf(logBuf, sizeof(logBuf), "Mismatch MessageMarker: Erwartet 0x%X, Erhalten 0x%X", expectedHeader.MessageMarker, actualHeader.MessageMarker);
+        logger_wrapper(logBuf);
+        mismatchDetected = true;
+    }
+
+    // 2. Daten/Payload vergleichen (Nur wenn DLC identisch ist, sonst macht Byte-Vergleich wenig Sinn)
+    if (expectedHeader.DataLength == actualHeader.DataLength) {
+        uint8_t len = dlcToLen(expectedHeader.DataLength);
+        if (std::memcmp(expectedData, actualData, len) != 0) {
+            logger_wrapper("Mismatch in Payload-Daten entdeckt:");
+            for (int i = 0; i < len; i++) {
+                if (expectedData[i] != actualData[i]) {
+                    snprintf(logBuf, sizeof(logBuf), "  Byte [%d]: Erwartet 0x%02X, Erhalten 0x%02X", i, expectedData[i], actualData[i]);
+                    logger_wrapper(logBuf);
+                }
+            }
+            mismatchDetected = true;
+        }
+    }
+    else {
+        logger_wrapper("Mismatch in Payload-Len");
+        mismatchDetected = true;
+    }
+
+    if (!mismatchDetected) {
+        logger_wrapper("SUCCESS: Frames sind absolut identisch!");
+    }
+    logger_wrapper("----------------------------------------");
 }
 
 void send_canfd(FDCAN_ProtocolStatusTypeDef& status, FDCAN_TxHeaderTypeDef& tx_header, uint8_t* tx_data)
@@ -167,12 +291,20 @@ extern "C" void main_cpp()
     send_canfd(status, TxHeaderStop, TxDataStop);
     
     while(true) {
-        /*
+        
         if (udpServer.hasPendingTransaction()) {
             
             const UdpRequestHeader& header = udpServer.getActiveHeader();
             const MoteusCanFrame* txFrames = udpServer.getTxFrames();
 
+            FDCAN_TxHeaderTypeDef TxHeaderTest = {};
+            uint8_t TxDataTest[64];
+            canInterface.make_frame(txFrames[0], TxHeaderTest, TxDataTest);
+
+            compare_can_frames(TxHeaderStop, TxDataStop, TxHeaderTest, TxDataTest, "StopFrame_vs_TestFrame");
+            udpServer.setPending(false);
+
+            /*
             MoteusCanFrame rxResponses[12]; 
 
             uint32_t repliesFound = canInterface.executeTransaction(
@@ -186,9 +318,9 @@ extern "C" void main_cpp()
 
             udpServer.sendResponse(rxResponses, repliesFound);
             dataLink.mSharedMemory.avgBusTimeUs.store(canInterface.getAvgBusTime());
-            
+            */
         }
-        */
+        
         send_canfd(status, TxHeaderPos, TxDataPos);
         CUDPServer::updateServer();
         HAL_Delay(50);

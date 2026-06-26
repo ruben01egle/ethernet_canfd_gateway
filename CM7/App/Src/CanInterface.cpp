@@ -1,13 +1,25 @@
 #include "CanInterface.hpp"
 #include <cstring>
+#include <inttypes.h>
+#include <cstdio>
 
 CCanInterface::CCanInterface(FDCAN_HandleTypeDef* pHandler, LogFunc pLogFun) : mHfdcan(pHandler), logger(pLogFun) {
     mCLock.reset();
 }
 
-uint32_t CCanInterface::executeTransaction(const MoteusCanFrame* pTxFrames, uint32_t pTxCount, 
-                                             uint32_t pExpectedReplies, uint32_t pTimeoutUs,
-                                             MoteusCanFrame* pOutRxFrames, uint32_t pMaxRxCapacity) 
+bool CCanInterface::init()
+{
+    if (HAL_FDCAN_Start(&hfdcan1) != HAL_OK) {
+        logger("failed to init canbus");
+        return false;
+    }
+    logger("canbus init succesfull");
+    return true;
+}
+
+uint32_t CCanInterface::executeTransaction(const MoteusCanFrame *pTxFrames, uint32_t pTxCount,
+                                           uint32_t pExpectedReplies, uint32_t pTimeoutUs,
+                                           MoteusCanFrame *pOutRxFrames, uint32_t pMaxRxCapacity)
 {
     uint32_t start_us = mCLock.getUS();
 
@@ -18,28 +30,17 @@ uint32_t CCanInterface::executeTransaction(const MoteusCanFrame* pTxFrames, uint
     }
 
     for (uint32_t i = 0; i < pTxCount; i++) {
-        const MoteusCanFrame& src = pTxFrames[i];
         FDCAN_TxHeaderTypeDef txHeader = {};
-
-        txHeader.Identifier = src.id;
-        txHeader.IdType     = (src.flags & FLAG_IS_EXTID) ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID;
-        txHeader.TxFrameType         = FDCAN_DATA_FRAME;
-        txHeader.DataLength          = lenToDlc(src.len);
-        txHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
-        txHeader.FDFormat            = (src.flags & FLAG_IS_CANFD) ? FDCAN_FD_CAN : FDCAN_CLASSIC_CAN;
-        txHeader.BitRateSwitch       = (src.flags & FLAG_USE_BRS) ? FDCAN_BRS_ON : FDCAN_BRS_OFF;
-        txHeader.TxEventFifoControl  = FDCAN_NO_TX_EVENTS;
-        txHeader.MessageMarker       = 0;
-
+        uint8_t txData[64] = {};
+        make_frame(pTxFrames[i], txHeader, txData);
         
         while (HAL_FDCAN_GetTxFifoFreeLevel(mHfdcan) == 0) {
             if (mCLock.getUS() - start_us > pTimeoutUs) {
-                recover_bus_error();
-                logger("CAN Bus error: could not transmit frames in time. Restarting bus.");
+                logger("CAN Bus error: could not transmit frames in time.");
                 return 0;
             }
         }
-        if (HAL_FDCAN_AddMessageToTxFifoQ(mHfdcan, &txHeader, const_cast<uint8_t*>(src.data)) != HAL_OK) {
+        if (HAL_FDCAN_AddMessageToTxFifoQ(mHfdcan, &txHeader, txData) != HAL_OK) {
             recover_bus_error();
             logger("CAN Bus error: could not add frame to fifo. Restarting bus.");
             return 0;
@@ -136,10 +137,38 @@ uint8_t CCanInterface::dlcToLen(uint32_t dlc) {
 void CCanInterface::recover_bus_error()
 {
     FDCAN_ProtocolStatusTypeDef status = {};
-    if (HAL_FDCAN_GetProtocolStatus(mHfdcan, &status) == HAL_OK
-        && status.BusOff) {
-      HAL_FDCAN_AbortTxRequest(mHfdcan, 0xFF);
-      HAL_FDCAN_Stop(mHfdcan);
-      HAL_FDCAN_Start(mHfdcan);
+    
+    if (HAL_FDCAN_GetProtocolStatus(mHfdcan, &status) == HAL_OK) {
+        if (status.LastErrorCode != 0 && status.LastErrorCode != 7) {
+            char error_msg[64];
+            sprintf(error_msg, "CAN Nominal Error LEC: %d", status.LastErrorCode);
+            logger(error_msg);
+        }
+        if (status.DataLastErrorCode != 0 && status.DataLastErrorCode != 7) {
+            char error_msg[64];
+            // status.DataLastErrorCode: 1=Stuff, 2=Form, 3=Ack, 4=Bit1, 5=Bit0, 6=CRC
+            sprintf(error_msg, "CAN Data Error LEC: %d", status.DataLastErrorCode);
+            logger(error_msg);
+        }
+        if (status.BusOff) {
+            HAL_FDCAN_AbortTxRequest(mHfdcan, 0xFF);
+            HAL_FDCAN_Stop(mHfdcan);
+            HAL_FDCAN_Start(mHfdcan);
+        }
     }
+}
+
+void CCanInterface::make_frame(const MoteusCanFrame& src, FDCAN_TxHeaderTypeDef& txHeader, uint8_t *txData)
+{
+    txHeader.Identifier = src.id;
+    txHeader.IdType     = (src.flags & FLAG_IS_EXTID) ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID;
+    txHeader.TxFrameType         = FDCAN_DATA_FRAME;
+    txHeader.DataLength          = lenToDlc(src.len);
+    txHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+    txHeader.FDFormat            = (src.flags & FLAG_IS_CANFD) ? FDCAN_FD_CAN : FDCAN_CLASSIC_CAN;
+    txHeader.BitRateSwitch       = (src.flags & FLAG_USE_BRS) ? FDCAN_BRS_ON : FDCAN_BRS_OFF;
+    txHeader.TxEventFifoControl  = FDCAN_NO_TX_EVENTS;
+    txHeader.MessageMarker       = 0;
+    
+    ::memcpy(txData, &src.data[0], src.len);
 }

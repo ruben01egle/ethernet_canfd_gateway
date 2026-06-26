@@ -255,6 +255,7 @@ CXX_INCLUDES =  \
 -I../../CM7/App/Inc \
 -I../../Common/App/Inc \
 -I../../robotarm_interface/include/protocol \
+-I../../Middlewares/Third_Party/moteus/
 
 # compile gcc flags
 ASFLAGS = $(MCU) $(AS_DEFS) $(AS_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections

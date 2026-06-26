@@ -11,6 +11,7 @@ public:
 public:
     CCanInterface(FDCAN_HandleTypeDef* pHandler, LogFunc pLogFun);
 
+    bool init();
     uint32_t executeTransaction(const MoteusCanFrame* pTxFrames, uint32_t pTxCount, 
                                  uint32_t pExpectedReplies, uint32_t pTimeoutUs,
                                  MoteusCanFrame* pOutRxFrames, uint32_t pMaxRxCapacity);
@@ -20,6 +21,8 @@ private:
     uint32_t lenToDlc(uint8_t len);
     uint8_t dlcToLen(uint32_t dlc);
     void recover_bus_error();
+public:
+    void make_frame(const MoteusCanFrame& src, FDCAN_TxHeaderTypeDef& txHeader, uint8_t* txData);
 
 private:
     FDCAN_HandleTypeDef* mHfdcan;
