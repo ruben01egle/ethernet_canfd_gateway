@@ -74,6 +74,11 @@ uint32_t CCanInterface::executeTransaction(const MoteusCanFrame *pTxFrames, uint
             }
         }
     }
+    if (receivedCount != pExpectedReplies) {
+        char error_msg[128];
+        sprintf(error_msg, "CAN Bus timeout %ld us: did not recieve all expected replies!", pTimeoutUs);
+        logger(error_msg);
+    }
 
     uint32_t end_us = mCLock.getUS();
     mLastBusTimeUs = end_us - start_us;

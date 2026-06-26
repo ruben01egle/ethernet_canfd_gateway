@@ -30,5 +30,5 @@ private:
 
     uint32_t mLastBusTimeUs = 0;
     float mAvgBusTimeUs = 0.0f;
-    static constexpr float FILTER_ALPHA = 0.05f;
+    static constexpr float FILTER_ALPHA = 1.0f;
 };
