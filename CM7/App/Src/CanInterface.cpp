@@ -141,13 +141,13 @@ void CCanInterface::recover_bus_error()
     if (HAL_FDCAN_GetProtocolStatus(mHfdcan, &status) == HAL_OK) {
         if (status.LastErrorCode != 0 && status.LastErrorCode != 7) {
             char error_msg[64];
-            sprintf(error_msg, "CAN Nominal Error LEC: %d", status.LastErrorCode);
+            sprintf(error_msg, "CAN Nominal Error LEC: %ld", status.LastErrorCode);
             logger(error_msg);
         }
         if (status.DataLastErrorCode != 0 && status.DataLastErrorCode != 7) {
             char error_msg[64];
             // status.DataLastErrorCode: 1=Stuff, 2=Form, 3=Ack, 4=Bit1, 5=Bit0, 6=CRC
-            sprintf(error_msg, "CAN Data Error LEC: %d", status.DataLastErrorCode);
+            sprintf(error_msg, "CAN Data Error LEC: %ld", status.DataLastErrorCode);
             logger(error_msg);
         }
         if (status.BusOff) {

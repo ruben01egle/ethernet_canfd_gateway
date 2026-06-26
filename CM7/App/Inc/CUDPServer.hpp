@@ -21,8 +21,6 @@ public:
     const MoteusCanFrame* getTxFrames() const { return mTxFrames; }
     bool sendResponse(const MoteusCanFrame* pResponseFrames, uint32_t pCount);
 
-    void setPending(bool pending) {mPendingTransaction = pending;}
-
 private:
     static void _static_recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *p, 
                                      const ip_addr_t *addr, u16_t port);

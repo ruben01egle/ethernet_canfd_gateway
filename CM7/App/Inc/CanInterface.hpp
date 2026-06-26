@@ -21,7 +21,6 @@ private:
     uint32_t lenToDlc(uint8_t len);
     uint8_t dlcToLen(uint32_t dlc);
     void recover_bus_error();
-public:
     void make_frame(const MoteusCanFrame& src, FDCAN_TxHeaderTypeDef& txHeader, uint8_t* txData);
 
 private:
